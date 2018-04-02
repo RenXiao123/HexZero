@@ -1,9 +1,12 @@
 from __future__ import print_function
-from Tkinter import *
+from tkinter import *
 import array
 from sys import stdout
 from collections import namedtuple
 from math import *
+import constants
+from playInfo import playInfo
+from MCTS import MCTS
 
 # Introduction to the game-------------------------------------------------------------------------------------------------------------
 """This is a two player Hex Game. In this game the player has to build a bridge from his side to his other side of
@@ -32,113 +35,16 @@ bridge is formed and game is over.
 
 
 
-GRID_SIZE = 7
+GRID_SIZE=constants.GRID_SIZE
 IMG_SIZE = 35
 XPAD = 40
 YPAD = 40
 WIN_HEIGHT = 2 * YPAD + GRID_SIZE * IMG_SIZE + 100
 WIN_WIDTH = 2 * XPAD + (3 * GRID_SIZE - 1) * IMG_SIZE
 
-# Data Structure
-data = namedtuple('data', 'i j')
-
-# Game Variables
-dx = [0, 1, 0, -1, -1, 1]
-dy = [-1, -1, 1, 1, 0, 0]
 
 
-class playInfo():
 
-    def __init__(self):
-        self.board = [[-1 for x in xrange(GRID_SIZE + 5)] for x in \
-                                                        xrange(GRID_SIZE + 5)]
-        self.Par = [[data(0, 0) for x in xrange(GRID_SIZE + 5)] \
-                                                for x in xrange(GRID_SIZE + 5)]
-        self.initParent()
-        self.mode = 0
-
-    def initParent(self):
-        for row in xrange(GRID_SIZE + 1):
-            for col in xrange(GRID_SIZE + 1):
-                self.Par[row + 1][col + 1] = data(row + 1, col + 1)
-
-    def givePar(self, par):
-        if self.Par[par.i][par.j].i == par.i and \
-                                            self.Par[par.i][par.j].j == par.j:
-            return self.Par[par.i][par.j]
-        par = self.givePar(self.Par[par.i][par.j])
-        return par	
-
-    def isConnect(self, sameNode, r, c):
-        flup, fllr = False, False
-        for same in sameNode:
-            root = self.givePar(same)
-            if((root.i == 1 and self.mode == 0) or (root.j == 1 and self.mode == 1)):
-                flup = True
-            if((root.i == GRID_SIZE and self.mode == 0) or (root.j==GRID_SIZE and self.mode == 1)):
-                fllr = True
-        if(flup and fllr ):
-            return True
-        if((flup and (r==GRID_SIZE or c==GRID_SIZE) ) or (fllr and (r==1 or c==1) )):
-            return True
-        return False
-
-    def getNeighbour(self, sameNode):
-        for same in sameNode:
-            keep = self.givePar(same)
-            if((self.mode == 0 and (keep.i == 1 or keep.i == GRID_SIZE)) or
-                            (self.mode == 1 and (keep.j == 1 or keep.j == GRID_SIZE))):
-                return same
-        return data(-1, -1)
-
-    def inRange(self, r, c):
-        if r<1 or r>GRID_SIZE or c<1 or c>GRID_SIZE:
-            return False
-        return True
-
-    def findSame(self, r, c):
-        sameNode = []
-        for k in xrange(6):
-            if not self.inRange(r + dy[k], c + dx[k]) :
-                continue;
-            if self.board[r + dy[k]][c + dx[k]] == self.mode:
-                sameNode.append(data(r + dy[k], c + dx[k]))
-        return sameNode
-
-    def isWinning(self, r, c):
-        sameNode = self.findSame(r, c)
-        if len(sameNode) == 0:
-            return False
-        if self.isConnect(sameNode,r,c):
-            return True
-        friend = self.getNeighbour(sameNode)
-        print(friend.i,end='\n')
-        if friend.i == -1:
-            self.Par[r][c] = self.givePar(sameNode[0])
-            for same in sameNode[1:]:
-                tmp = self.givePar(same)
-                if self.Par[r][c] != tmp:
-                    self.Par[tmp.i][tmp.j] = data(r, c)
-        else:
-            self.Par[r][c] = self.givePar(friend)
-            for same in sameNode:
-                if same == friend:
-                    continue
-                tmp = self.givePar(same)
-                if self.Par[r][c] != tmp:
-                    self.Par[tmp.i][tmp.j] = data(r, c)
-        return False
-
-    def printBoard(self):
-        n = GRID_SIZE
-        i,j = 0,0
-        print ("Current Board Display: ",end="\n")
-        for i in range(1,n+1):
-            for k in range(1,i):
-                stdout.write(" ")
-                for j in range(1,n+1):
-                    print(self.board[i][j],end=" ")
-                stdout.write("\n")
 
 
 class gameGrid():
@@ -162,9 +68,9 @@ class gameGrid():
                 xi += 2 * IMG_SIZE
 
     def getCoordinates(self, widget):
-        row = (widget.winfo_y() - YPAD) / IMG_SIZE
-        col = (widget.winfo_x() - XPAD - row * IMG_SIZE) / (2 * IMG_SIZE)
-        return row + 1, col + 1
+        row = (widget.winfo_y() - YPAD) // IMG_SIZE
+        col = (widget.winfo_x() - XPAD - row * IMG_SIZE) // (2 * IMG_SIZE)
+        return row , col
 
     def toggleColor(self, widget):
         if self.playInfo.mode == 1:
@@ -174,31 +80,49 @@ class gameGrid():
             widget.config(image=self.blue)
             widget.image = self.blue
 
-    def display_winner(self, winner):
+    def display_winner(self, winner_label):
         winner_window = Tk()
         winner_window.wm_title("Winner")
         frame = Frame(winner_window, width=40, height=40)
         frame.pack()
-        label = Label(frame,text = "Winner is Player : " + winner )
+        label = Label(frame,text = "Winner is Player : " + winner_label)
         label.pack()
-        label.place(anchor=nW, x = 20, y = 20)
+        label.place(anchor=NW, x = 20, y = 20)
 
     def on_click(self, event):
         if event.widget.image != self.white:
             return
         self.toggleColor(event.widget)
         a, b = self.getCoordinates(event.widget)
-        self.playInfo.board[a][b] = self.playInfo.mode
+        self.playInfo.update(a,b)
         #self.playInfo.printBoard()
-        if self.playInfo.isWinning(a, b):
-            winner = ""
-            if self.playInfo.mode == 0:
-                winner = " 1 ( Blue ) "
+        if self.playInfo.winner!=0:
+            winner_label = ""
+            if self.playInfo.winner == -1:
+                winner_label = " -1 ( Blue ) "
             else:
-                winner += " 2 ( Blue ) "
-            self.display_winner(winner)
-            exit()
-        self.playInfo.mode = (self.playInfo.mode + 1) % 2
+                winner_label += " 1 ( Red ) "
+            #self.display_winner(winner_label)
+            print(winner_label)
+
+        else:
+
+            AI= MCTS(a,b,-self.playInfo.mode,self.playInfo.board)
+            e=AI.move()
+            l = Label(self.frame, image=self.red)
+            l.pack()
+            l.image = self.red
+            l.place(anchor=NW, x=XPAD + e[0] * IMG_SIZE + 2* e[1]*IMG_SIZE, y=YPAD + e[0] * IMG_SIZE)
+            print(e)
+            self.playInfo.update(e[0],e[1])
+            if self.playInfo.winner!=0:
+                winner_label = ""
+                if self.playInfo.winner == -1:
+                    winner_label = " -1 ( Blue ) "
+                else:
+                    winner_label += " 1 ( Red ) "
+                self.display_winner(winner_label)
+                print(winner_label)
 
 class gameWindow:
     def __init__(self, window):
@@ -215,4 +139,3 @@ def main():
 
 
 main()
-
